@@ -27,6 +27,11 @@ GET_INVOLVED = 'Please see <a href="http://wiki.ros.org/rosdistro/Tutorials/Inde
 
 CONTRIBUTE_TMPL = MISSING_DOC_TMPL + ' ' + GET_INVOLVED.replace('%', '%%')
 
+''' Directory name to report name mappings for known test result reports '''
+known_testresults_name_mappings = {
+    'haros_report'  : 'HAROS',
+}
+
 class UtilException(Exception): pass
 
 def ahref(url, text):
@@ -57,14 +62,14 @@ def repo_devel_job_data_file(repo_name, distro=None):
     else:
         return os.path.join(doc_path, 'devel_jobs', repo_name, "results.yaml")
 
-def repo_haros_data_file(repo_name, distro=None):
+def repo_testresult_dir(repo_name, distro=None):
     """
-    Generate filesystem path to haros_report.yaml for repository
+    Generate filesystem path to test results/reports directory for repository
     """
+    testresults_dir = doc_path
     if distro:
-        return os.path.join(doc_path, distro, 'haros', repo_name, "haros_report.yaml")
-    else:
-        return os.path.join(doc_path, 'haros', repo_name, "haros_report.yaml")
+        testresults_dir = os.path.join(testresults_dir, distro)
+    return os.path.join(testresults_dir, 'devel_jobs', repo_name, 'test_results')
 
 def get_package_versions(package):
     distros = []
@@ -247,13 +252,51 @@ def load_repo_devel_job_data(repo_name, distro=None):
     """
     return _load_manifest_file(repo_devel_job_data_file(repo_name, distro), repo_name, 'devel job data for repo')
 
-def load_repo_haros_data(repo_name, distro=None):
+def get_repo_testresults_data(repo_name, distro=None):
     """
-    Load haros_data.yaml properties into dictionary for repo
-    @return: manifest properties dictionary
+    Search the rosdoc test restults directory for available test results
+    @return List of found test results, each testresult a dict containing "name" and "urls"
     @raise UtilException: if unable to load. Text of error message is human-readable
     """
-    return _load_manifest_file(repo_haros_data_file(repo_name, distro), repo_name, 'HAROS data for repo')
+    testresultsdir = repo_testresult_dir(repo_name, distro)
+    if not os.path.exists(testresultsdir):
+        return []
+    #
+    testresultsdir_contents = os.listdir(testresultsdir)
+    testresults = []
+    # build the base URL for links
+    if distro:
+        testresultsurl = doc_url + distro + '/devel_jobs/' + repo_name + "/test_results/"
+    else:
+        testresultsurl = doc_url + 'devel_jobs/' + repo_name + "/test_results/"
+    #
+    for testresult_dir in testresultsdir_contents:
+        testresult_path = os.path.join(testresultsdir,testresult_dir)
+        if not os.path.isdir(testresult_path):
+            continue
+        # Beautify the name of known tests if possible
+        testresult_name = known_testresults_name_mappings.get(testresult_dir, testresult_dir) 
+        # Find index file or test result files (XML etc)
+        # in the testresults folder and construct URLs to use in links.
+        testresult_contents = os.listdir(testresult_path)
+        # only consider files, not folders
+        testresult_contents = [e for e in testresult_contents if os.path.isfile(os.path.join(testresult_path, e))]
+        if len(testresult_contents)==0:
+            continue
+        # If there is an 'index' file, make a link to that,
+        # else provide links to all files in the directory.
+        if any(e[0:6]=='index.' for e in testresult_contents):
+            urls = [testresultsurl+testresult_dir+'/'+e for e in testresult_contents if e[0:6]=='index.']
+        else:
+            urls = [testresultsurl+testresult_dir+'/'+e for e in testresult_contents]
+        if len(urls)==0:
+            continue
+        # else: test result is good to use
+        testresults.append({
+            'name': testresult_name,
+            'urls': urls
+        })
+    return testresults
 
 def load_repo_manifest(repo_name):
     """
